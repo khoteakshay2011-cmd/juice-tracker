@@ -130,6 +130,7 @@
 <style>
   .status{cursor:pointer}
   .status.ok{color:var(--accent)}
+  .status.preview{color:#a86a00}
 </style>
 </head>
 <body>
@@ -246,6 +247,9 @@
   const API = 'https://script.google.com/macros/s/AKfycbxsn-TEM-p1S7SlHFspeUukh62nK8ZEgHKwmthgFTONq3qX4AG1y65JA6TjeqdazX3y/exec';
   // =====================================================
   const CONNECTED = /^https:\/\/script\.google\.com\//.test(API);
+  // This same file runs in two places: live on GitHub Pages (saves to the Google Sheet),
+  // and as a preview anywhere else, e.g. inside Claude (sample data only, never touches the Sheet).
+  const PREVIEW = !/\.github\.io$/.test(location.hostname);
 
   const PALETTE = ['#7a9a1e','#2f6b3a','#a3214f','#e0702a','#b07b3a','#3d6fb6','#7b4fa8','#c49a12'];
   const DEFAULT_MENU = [
@@ -264,7 +268,7 @@
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 
   // ---------- local storage helpers ----------
-  const ls = {
+  const ls = PREVIEW ? { get(k,f){ return f; }, set(){} } : {
     get(k,f){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):f; }catch(e){ return f; } },
     set(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
   };
@@ -328,6 +332,13 @@
   function scheduleFlush(ms){ clearTimeout(flushT); flushT=setTimeout(flush, ms); }
 
   async function flush(){
+    if(PREVIEW){   // pretend to save, so the preview behaves like the real page
+      if(sending || !outbox.length) return;
+      sending=true; updateStatus();
+      await new Promise(r=>setTimeout(r,400));
+      const batch=outbox.slice(); outbox=[]; applyToServer(batch); flushGen++;
+      sending=false; updateStatus(); render(); return;
+    }
     if(!CONNECTED || sending || !outbox.length) return;
     sending=true; updateStatus();
     const batch = outbox.slice(0,100);
@@ -350,7 +361,7 @@
 
   let pulling=false;
   async function pull(){
-    if(!CONNECTED || pulling) return;
+    if(PREVIEW || !CONNECTED || pulling) return;
     pulling=true;
     const gen=flushGen;
     const dates=[...new Set([today, viewDay])].join(',');
@@ -371,6 +382,7 @@
   function updateStatus(){
     const s=$('status'); s.className='status';
     const n=outbox.length;
+    if(PREVIEW){ s.textContent = sending ? 'Preview — saving (pretend)…' : 'Preview — sample data, not connected to your Google Sheet'; s.classList.add('preview'); return; }
     if(!CONNECTED){ s.textContent='Not connected to Google Sheet yet — sales are kept on this phone.'; s.classList.add('warn'); return; }
     if(sending){ s.textContent=`Saving ${n} to Google Sheet…`; return; }
     if(!online){ s.textContent = n ? `No internet — ${n} waiting, will send automatically` : 'No internet — showing last saved data'; s.classList.add('warn'); return; }
@@ -591,6 +603,17 @@
   setInterval(()=>{ rollDay(); if(!document.hidden) pull(); }, 20000);   // pick up the other phone's sales
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ rollDay(); pull(); flush(); } });
   window.addEventListener('online', ()=>{ pull(); flush(); });
+
+  // ---------- preview sample data ----------
+  if(PREVIEW){
+    const mk=(k,list)=>{ const [y,m,d]=k.split('-').map(Number); return list.map(([hh,mm,id],ix)=>{ const it=DEFAULT_MENU.find(x=>x.id===id); return {id:'s'+k+ix,i:id,n:it.name,p:it.price,t:new Date(y,m-1,d,hh,mm).getTime()}; }); };
+    const yd=shift(today,-1);
+    server[today]={ sales: mk(today,[[6,34,'amla'],[6,41,'karela'],[6,47,'beet'],[6,52,'amla'],[7,3,'carrot'],[7,8,'bhel'],[7,12,'amla'],[7,19,'beet'],[7,26,'bhel'],[7,33,'karela'],[7,41,'amla'],[7,48,'carrot']]),
+      purchases:[{id:'p1',name:'Amla',qty:2,unit:'kg',cost:160,t:0},{id:'p2',name:'Moong sprouts',qty:1,unit:'kg',cost:140,t:0},{id:'p3',name:'Paper cups',qty:1,unit:'packet',cost:60,t:0}] };
+    server[yd]={ sales: mk(yd,[[6,32,'amla'],[6,40,'beet'],[6,55,'amla'],[7,5,'bhel'],[7,10,'karela'],[7,22,'carrot'],[7,30,'amla'],[7,44,'bhel'],[7,58,'beet'],[8,6,'amla'],[8,15,'bhel'],[8,24,'carrot']]),
+      purchases:[{id:'p4',name:'Carrot',qty:3,unit:'kg',cost:120,t:0},{id:'p5',name:'Beetroot',qty:2,unit:'kg',cost:80,t:0},{id:'p6',name:'Karela',qty:1,unit:'kg',cost:70,t:0}] };
+    ingNames=['Amla','Karela','Beetroot','Carrot','Moong sprouts','Onion','Tomato','Lemon','Paper cups'];
+  }
 
   render(); updateStatus();
   pull(); flush();
