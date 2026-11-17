@@ -47,7 +47,7 @@ function ensureSheets_() {
   if (!sum) {
     sum = ss.insertSheet('Summary');
     sum.getRange('A1').setFormula(`=QUERY(Sales!A2:D, "select A, count(D), sum(D) where A is not null group by A order by A desc label A 'Date', count(D) 'Items sold', sum(D) 'Sales ₹'", 0)`);
-    sum.getRange('E1').setFormula(`=QUERY(Ingredients!A2:F, "select A, sum(F) where A is not null group by A order by A desc label A 'Date', sum(F) 'Ingredients ₹'", 0)`);
+    sum.getRange('E1').setFormula(`=IFERROR(QUERY(Ingredients!A2:F, "select A, sum(F) where A is not null group by A order by A desc label A 'Date', sum(F) 'Ingredients ₹'", 0), {"Date","Ingredients ₹"})`);
     sum.getRange('H1').setFormula(`=QUERY(Sales!A2:D, "select A, count(D) where A is not null group by A pivot C order by A desc label A 'Date (qty by item)'", 0)`);
   }
   const def = ss.getSheetByName('Sheet1');
